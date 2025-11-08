@@ -1,0 +1,1065 @@
+# Подробная документация по созданию плагинов для exteraGram
+
+Я тщательно изучил всю доступную документацию по созданию плагинов для exteraGram. Вот полный и детальный обзор всего, что необходимо знать для разработки плагинов.
+
+## Введение в систему плагинов exteraGram
+
+Система плагинов exteraGram работает на основе **Chaquopy v16** (библиотека для взаимодействия Java и Python) и **Aliucord hook** (система хуков из модификации Discord)[1][2]. Это позволяет разработчикам писать плагины на **Python 3.11** с использованием **Xposed-подобного** метода хуков для изменения поведения приложения[1][2].
+
+## Настройка окружения разработки
+
+### Требования
+
+**1. Скачайте exteraGram**
+Убедитесь, что используете последнюю версию exteraGram или производных клиентов. Можно скачать из бета-канала[1].
+
+**2. Включите движок плагинов**
+После входа в аккаунт перейдите в `exteraGram Preferences` > `Plugins` и включите движок плагинов. Нажмите кнопку info и включите режим разработчика[1].
+
+**3. Создайте проект**
+- Создайте папку на ПК
+- Создайте Python файл, например `first_plugin.py`
+- Создайте виртуальное окружение
+- Установите `exteragram-utils` для типизации и клиента hot-reload[1]
+
+```bash
+pip install exteragram-utils
+```
+
+**4. Подключение к телефону**
+- Подключите телефон к ПК через USB
+- Убедитесь, что ADB находится в вашем `PATH`[1]
+
+**5. VS Code Remote Debugging**
+Для VS Code настройте remote debugging. Важно: `remoteRoot` должен заканчиваться на `PLUGIN_ID.py`[1].
+
+## Базовая структура плагина
+
+### Обязательные элементы
+
+Все файлы `.plugin` должны включать[3]:
+
+1. **Метаданные** — определяются как **простые строки** (без конкатенации)
+2. **Один класс**, наследующий от `BasePlugin`
+
+### Минимальный шаблон плагина
+
+```python
+__id__ = "my_plugin"
+__name__ = "My Plugin"
+__description__ = "Description of my plugin"
+__author__ = "@yourUsername"
+__version__ = "1.0.0"
+__icon__ = "PackName/0"
+__min_version__ = "11.12.0"
+
+from base_plugin import BasePlugin
+
+class MyPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.log("Plugin loaded!")
+```
+
+## Метаданные плагина
+
+### Обязательные поля[4]
+
+- `__id__`: Должен быть 2-32 символа, начинаться с буквы, содержать только латинские буквы, цифры, дефисы (`-`) и подчеркивания (`_`)
+- `__name__`: Имя плагина
+
+### Опциональные поля[4]
+
+- `__author__`: Поддерживает обычный текст или Telegram username/ссылки на каналы (например, `@yourUsername` или `@yourPluginChannel`). Могут отображаться как кликабельные ссылки
+- `__description__`: Поддерживает базовый markdown для форматирования
+- `__version__`: По умолчанию `1.0`, если не указано
+- `__icon__`: Формат — короткое имя стикерпака + индекс стикера через `/`. Индекс начинается с `0`. Например, для стикерпака `https://t.me/addstickers/MyPackName` короткое имя — `MyPackName`, для второго стикера: `MyPackName/1`
+- `__min_version__`: Минимальная версия exteraGram, валидируется движком
+
+**Важно:** Метаданные парсятся через `AST`, поэтому не используйте конкатенацию строк или форматирование[4].
+
+## События плагина
+
+### Загрузка и выгрузка[4]
+
+```python
+def on_plugin_load(self):
+    # Вызывается при включении плагина или при запуске приложения
+    pass
+
+def on_plugin_unload(self):
+    # Вызывается при отключении плагина или при закрытии приложения
+    pass
+```
+
+### События приложения[4]
+
+Enum `AppEvent` предоставляет события:
+- `START` — приложение запускается
+- `STOP` — приложение останавливается  
+- `PAUSE` — приложение переходит в фон
+- `RESUME` — приложение возвращается на передний план
+
+## Меню Items (пункты меню)
+
+### MenuItemData[4]
+
+Добавьте пользовательские действия в различные меню приложения с помощью `self.add_menu_item()`:
+
+**Обязательные параметры:**
+- `menu_type: MenuItemType` — тип меню:
+  - `MESSAGE_CONTEXT_MENU` — меню при нажатии на сообщение
+  - `DRAWER_MENU` — главное навигационное меню (боковое меню)
+  - `CHAT_ACTION_MENU` — меню с тремя точками внутри чата
+  - `PROFILE_ACTION_MENU` — меню с тремя точками в профиле пользователя/бота/канала
+- `text: str` — текст, отображаемый для пункта меню
+- `on_click: Callable[[Dict[str, Any]], None]` — функция, вызываемая при нажатии
+
+**Опциональные параметры:**
+- `item_id: str` — уникальный ID для удаления через `remove_menu_item()`
+- `icon: str` — имя drawable ресурса для иконки (например, `"msg_info"`, `"msg_delete"`)
+- `subtext: str` — дополнительный текст под основным
+- `condition: str` — MVEL выражение для условного показа (например, `"message.isOut()"`)
+- `priority: int` — число для влияния на позицию в меню (большие числа первыми)
+
+### Контекст on_click[4]
+
+Callback `on_click` получает словарь с данными, специфичными для контекста. Возможные ключи:
+
+- `account: int` — номер текущего аккаунта
+- `context: android.content.Context` — Android контекст приложения
+- `fragment: org.telegram.ui.ActionBar.BaseFragment` — текущий UI фрагмент
+- `dialog_id: long` — ID диалога для текущего чата
+- `user: TLRPC.User` — объект User (например, в профиле)
+- `userId: long` — ID пользователя
+- `userFull: TLRPC.UserFull` — полный объект с деталями
+- `chat: TLRPC.Chat` — объект Chat для группы или канала
+- `chatId: long` — ID чата
+- `chatFull: TLRPC.ChatFull` — полный объект чата
+- `encryptedChat: TLRPC.EncryptedChat` — объект для секретного чата
+- `message: org.telegram.messenger.MessageObject` — объект сообщения
+- `groupedMessages` — информация о сгруппированных медиа
+- `botInfo: TL_bots.BotInfo` — информация о боте
+
+**Рекомендация:** Проверяйте существование ключа перед использованием[4]:
+```python
+self.log(f"Context keys: {list(context.keys())}")
+```
+
+## Хуки (Hooks)
+
+### Регистрация хуков[4]
+
+Для перехвата сетевых запросов, ответов или клиентских событий нужно зарегистрировать хук:
+
+```python
+self.add_hook("TL_messages_readHistory", match_substring=False, priority=0)
+```
+
+**Параметры:**
+- `name` — имя события или запроса (например, `"TL_messages_readHistory"`)
+- `match_substring` — если `True`, хук сработает при частичном совпадении имени
+- `priority` — хуки с большим приоритетом выполняются первыми (по умолчанию `0`)
+
+**Примеры:**
+```python
+self.add_hook("TL_messages_readHistory")
+self.add_hook("requestCall")
+self.add_hook("TL_channels_readHistory")
+```
+
+Список имен запросов можно найти в TL-схеме[4].
+
+### Хук отправки сообщений[4]
+
+Для распространенного случая перехвата отправки сообщений используйте:
+
+```python
+self.add_on_send_message_hook(priority=0)
+```
+
+### Типы хуков
+
+**1. API Request Hooks** — позволяют проверять или изменять исходящие запросы и входящие ответы[4]:
+
+```python
+def pre_request_hook(self, request, callback, ...):
+    # До отправки запроса
+    pass
+
+def post_request_hook(self, request, response, ...):
+    # После получения ответа
+    pass
+```
+
+**2. Update Hooks** — вызываются при обработке обновлений от Telegram[4]:
+
+```python
+def on_update_hook(self, update, ...):
+    # Обработка одиночного обновления
+    pass
+
+def on_updates_hook(self, updates, ...):
+    # Обработка множественных обновлений
+    pass
+```
+
+**3. Message Sending Hook** — специально для перехвата отправляемых сообщений[4]:
+
+```python
+def on_send_message_hook(self, params):
+    # Перехват и изменение параметров отправляемого сообщения
+    pass
+```
+
+### HookResult и HookStrategy[4]
+
+`HookResult` определяет действие:
+- `HookStrategy.DEFAULT` — без изменений, обычный поток
+- `HookStrategy.CANCEL` — отменить запрос/подавить ответ
+- `HookStrategy.MODIFY` — изменить request/response/update/params
+- `HookStrategy.MODIFY_FINAL` — как MODIFY, но останавливает вызов хуков других плагинов
+
+**Пример перехвата отправки сообщения:**
+
+```python
+def on_plugin_load(self):
+    self.add_on_send_message_hook()
+
+def on_send_message_hook(self, params):
+    text = params.message
+    if text.startswith(".wt"):
+        # Изменяем сообщение
+        params.message = "Weather info here"
+        return HookResult(strategy=HookStrategy.MODIFY)
+    return HookResult()  # Без изменений
+```
+
+## Xposed Method Hooking
+
+### Базовые классы хуков[5]
+
+Создайте обработчик, наследуя от одной из базовых классов:
+
+1. **MethodHook** — запуск кода *до* и/или *после* оригинального метода
+2. **MethodReplacement** — *полная замена* логики метода
+
+### Объект param[5]
+
+Все callback методы хуков получают объект `param` (`de.robv.android.xposed.XC_MethodHook.MethodHookParam`):
+
+- `param.thisObject` — экземпляр, на котором вызван метод (`None` для статических)
+- `param.args` — список аргументов метода (можно читать и изменять)
+- `param.getResult()` — значение, возвращенное методом (доступно в `after_hooked_method`)
+- `param.method` — объект `java.lang.reflect.Member` хуканного метода
+- `param.setResult(new_result)` — установить результат в `before_hooked_method` пропустит оригинальный метод
+
+### Фильтры хуков[5]
+
+Используйте декоратор `@hook_filters` для контроля выполнения callback:
+
+**Фильтры результата:**
+- `RESULT_IS_NULL` — результат null
+- `RESULT_IS_TRUE` — результат true
+- `RESULT_IS_FALSE` — результат false
+- `RESULT_NOT_NULL` — результат не null
+- `ResultIsInstanceOf(clazz)` — результат instanceof clazz
+- `ResultEqual(value)` — result.equals(value)
+- `ResultNotEqual(value)` — !result.equals(value)
+
+**Фильтры аргументов:**
+- `ArgumentIsNull(index)`
+- `ArgumentNotNull(index)`
+- `ArgumentIsFalse(index)`
+- `ArgumentIsTrue(index)`
+- `ArgumentIsInstanceOf(index, clazz)`
+- `ArgumentEqual(index, value)`
+- `ArgumentNotEqual(index, value)`
+
+**Дополнительно:**
+- `Condition(condition, object=None)` — MVEL выражение
+- `Or(*filters)` — хотя бы один фильтр истинный
+
+### Процесс хукинга (пошагово)[5]
+
+**1. Найдите целевой метод или конструктор:**
+
+```python
+from java import jclass
+AndroidUtilities = jclass("org.telegram.messenger.AndroidUtilities")
+method = AndroidUtilities.getDeclaredMethod("dp", float)
+```
+
+**2. Реализуйте обработчик хука:**
+
+```python
+class MyMethodHook(MethodHook):
+    def before_hooked_method(self, param):
+        # Код до выполнения метода
+        pass
+    
+    def after_hooked_method(self, param):
+        # Код после выполнения метода
+        pass
+```
+
+**3. Примените хук:**
+
+```python
+def on_plugin_load(self):
+    hook_handler = MyMethodHook()
+    self.hook_method(method, hook_handler)
+```
+
+**4. Хук всех методов с именем:**
+
+```python
+self.hook_all_methods(hook_class, method_name, xposed_hook, priority)
+self.hook_all_constructors(hook_class, xposed_hook, priority)
+```
+
+**5. Unhooking (отключение хука):**
+
+```python
+unhook = self.hook_method(...)
+self.unhook_method(unhook)
+```
+
+### Практические примеры[5]
+
+**Пример 1: Изменение аргументов (Before Hook)**
+
+```python
+class ToastHook(MethodHook):
+    def before_hooked_method(self, param):
+        # Добавить префикс к тексту Toast
+        param.args[0] = "[Plugin] " + str(param.args[0])
+```
+
+**Пример 2: Изменение возвращаемого значения (After Hook)**
+
+```python
+class MainAppHook(MethodHook):
+    def after_hooked_method(self, param):
+        param.setResult(False)  # Всегда возвращать False
+```
+
+**Пример 3: Замена метода (MethodReplacement)**
+
+```python
+class LogDisableReplacement(MethodReplacement):
+    def replace_hooked_method(self, param):
+        return None  # Полностью отключить логирование
+```
+
+## Настройки плагина (Plugin Settings)
+
+### Создание настроек[4]
+
+Реализуйте метод `create_settings`, возвращающий список контролов UI:
+
+```python
+from ui.settings import Header, Switch, Selector, Input, Text, EditText, Divider
+
+def create_settings(self):
+    return [
+        Header(text="My Plugin Settings"),
+        Switch(key="enable_feature", text="Enable Feature", default=True),
+        Selector(
+            key="mode", 
+            text="Select Mode",
+            items=["Mode 1", "Mode 2", "Mode 3"],
+            default=0
+        ),
+        Input(key="api_key", text="API Key", default=""),
+        Divider(text="Advanced"),
+        EditText(key="notes", hint="Enter notes", multiline=True)
+    ]
+```
+
+### Доступные контролы[4]
+
+| Контрол | key | text | default | Другие параметры |
+|---------|-----|------|---------|------------------|
+| Header | - | Обязательно | - | `text`: заголовок секции |
+| Divider | - | - | - | `text`: опциональная заметка |
+| Switch | Обязательно | Обязательно | `bool` | `subtext`, `icon`, `on_change(bool)`, `on_long_click(View)`, `link_alias` |
+| Selector | Обязательно | Обязательно | `int` индекс | `items: List[str]`, `icon`, `on_change(int)`, `link_alias` |
+| Input | Обязательно | Обязательно | `str` | `subtext`, `icon`, `on_change(str)`, `link_alias` |
+| Text | - | Обязательно | - | `icon`, `accent: bool`, `red: bool`, `on_click(View)`, `create_sub_fragment()`, `link_alias` |
+| EditText | Обязательно | - | `str` | `hint`, `multiline: bool`, `max_length: int`, `mask: str` (regex), `on_change(str)` |
+
+### Доступ к настройкам[4]
+
+**Чтение:**
+```python
+value = self.get_setting("key", default_value)
+```
+
+**Запись:**
+```python
+self.set_setting("key", value, reload_settings=False)
+```
+
+**Экспорт/Импорт всех настроек:**
+```python
+settings_dict = self.export_settings()
+self.import_settings(settings_dict)
+```
+
+## Android Utilities
+
+### Proxy классы для Java интерфейсов[6]
+
+**R (Runnable Proxy)** — `static_proxy` для `java.lang.Runnable`[6]:
+```python
+from android_utils import R, run_on_ui_thread
+
+runnable = R(lambda: self.log("Running on UI thread"))
+run_on_ui_thread(runnable)
+```
+
+**OnClickListener** — `dynamic_proxy` для `android.view.View.OnClickListener`[6]:
+```python
+from android_utils import OnClickListener
+
+button.setOnClickListener(OnClickListener(lambda view: self.log("Clicked!")))
+```
+
+**OnLongClickListener** — `dynamic_proxy` для `android.view.View.OnLongClickListener`[6]:
+```python
+from android_utils import OnLongClickListener
+
+def on_long_click(view):
+    self.log("Long pressed!")
+    return True  # Событие обработано
+
+button.setOnLongClickListener(OnLongClickListener(on_long_click))
+```
+
+### Утилиты[6]
+
+**run_on_ui_thread** — выполнить на UI потоке[6]:
+```python
+from android_utils import run_on_ui_thread
+
+run_on_ui_thread(lambda: update_ui(), delay=0)  # delay в миллисекундах
+```
+
+**log** — логирование в logcat[6]:
+```python
+from android_utils import log
+
+log("Simple message")
+log(complex_object)  # Автоматически форматируется в JSON
+```
+
+## Client Utilities
+
+### Фоновые потоки (Queues)[7]
+
+Для длительных операций без блокировки UI:
+
+```python
+from client_utils import run_on_queue
+
+run_on_queue(my_function, queue_name="file", delay=0)
+```
+
+**Доступные очереди (строковые константы):**
+- `"file"` — для файловых операций
+- `"search"` — для поисковых операций
+- и другие диспетчерские очереди Telegram
+
+**Получить экземпляр очереди:**
+```python
+from client_utils import get_dispatch_queue
+
+queue = get_dispatch_queue("file")
+```
+
+### Отправка API запросов[7]
+
+```python
+from client_utils import send_request, RequestCallback
+
+def on_response(response, error):
+    if error:
+        self.log(f"Error: {error}")
+    else:
+        self.log(f"Response: {response}")
+
+request = TLRPC.TL_messages_getHistory()
+request.peer = peer
+request.limit = 10
+
+send_request(request, RequestCallback(on_response))
+```
+
+### Отправка сообщений и медиа[7]
+
+**Текстовое сообщение:**
+```python
+from client_utils import send_text
+
+send_text(
+    dialog_id=chat_id,
+    text="Hello, World!",
+    entities=None,  # TLRPC.MessageEntity список
+    replyToMsg=None,
+    scheduleDate=None
+)
+```
+
+**Фото:**
+```python
+from client_utils import send_photo
+
+send_photo(
+    dialog_id=chat_id,
+    file_path="/path/to/photo.jpg",
+    caption="My photo",
+    caption_entities=None
+)
+```
+
+**Видео:**
+```python
+from client_utils import send_video
+
+send_video(
+    dialog_id=chat_id,
+    file_path="/path/to/video.mp4",
+    caption="My video"
+)
+```
+
+**Документ:**
+```python
+from client_utils import send_document
+
+send_document(
+    dialog_id=chat_id,
+    file_path="/path/to/file.pdf",
+    caption="Document"
+)
+```
+
+**Аудио:**
+```python
+from client_utils import send_audio
+
+send_audio(
+    dialog_id=chat_id,
+    file_path="/path/to/song.mp3",
+    caption="Music"
+)
+```
+
+### Редактирование сообщений[7]
+
+```python
+from client_utils import edit_message
+
+edit_message(
+    dialog_id=chat_id,
+    message_id=msg_id,
+    new_text="Edited text",
+    entities=None,
+    with_spoiler=False
+)
+```
+
+### Доступ к контроллерам и менеджерам[7]
+
+```python
+from client_utils import (
+    get_messages_controller,
+    get_messages_storage,
+    get_send_messages_helper,
+    get_account_instance,
+    get_user_config,
+    get_connection_manager
+)
+
+messages_controller = get_messages_controller()
+messages_storage = get_messages_storage()
+```
+
+## Bulletin Helper (Уведомления внизу экрана)
+
+### Стандартные bulletins[8]
+
+```python
+from bulletin import BulletinHelper
+
+# Информационное уведомление
+BulletinHelper.show_info("Information message", fragment=None)
+
+# Ошибка
+BulletinHelper.show_error("Error occurred!", fragment=None)
+
+# Успех
+BulletinHelper.show_success("Operation successful!", fragment=None)
+```
+
+### Пользовательские bulletins[8]
+
+```python
+from bulletin import BulletinHelper
+from org.telegram.messenger import R as R_tg
+
+# Однострочный с кастомной иконкой
+BulletinHelper.show_simple(
+    text="Custom message",
+    icon_res_id=R_tg.raw.info,
+    fragment=None
+)
+
+# Двухстрочный
+BulletinHelper.show_two_line(
+    title="Title",
+    subtitle="Subtitle text",
+    icon_res_id=R_tg.raw.success,
+    fragment=None
+)
+```
+
+### Bulletins с действиями[8]
+
+**С кнопкой:**
+```python
+def on_button_click():
+    self.log("Button clicked!")
+
+BulletinHelper.show_with_button(
+    text="Message with button",
+    icon_res_id=R_tg.raw.info,
+    button_text="OK",
+    on_click=on_button_click,
+    fragment=None,
+    duration=BulletinHelper.DURATION_PROLONG
+)
+```
+
+**Undo-стиль:**
+```python
+def on_undo():
+    self.log("Undone!")
+
+def on_action():
+    self.log("Action confirmed!")
+
+BulletinHelper.show_undo(
+    text="Item deleted",
+    on_undo=on_undo,
+    on_action=on_action,
+    subtitle=None,
+    fragment=None
+)
+```
+
+### Контекстные bulletins[8]
+
+```python
+# Скопировано в буфер
+BulletinHelper.show_copied_to_clipboard(message="Copied!", fragment=None)
+
+# Ссылка скопирована
+BulletinHelper.show_link_copied(is_private_link_info=False, fragment=None)
+
+# Файл сохранен в галерею
+BulletinHelper.show_file_saved_to_gallery(is_video=False, amount=1, fragment=None)
+
+# Файл сохранен в загрузки
+BulletinHelper.show_file_saved_to_downloads(
+    file_type_enum_name="UNKNOWN",
+    amount=1,
+    fragment=None
+)
+```
+
+### Длительности[8]
+
+```python
+BulletinHelper.DURATION_SHORT   # 1500 мс
+BulletinHelper.DURATION_LONG    # 2750 мс
+BulletinHelper.DURATION_PROLONG # 5000 мс
+```
+
+## Alert Dialog Builder
+
+### Типы диалогов[9]
+
+```python
+from alert import AlertDialogBuilder
+
+# Обычный диалог
+AlertDialogBuilder.ALERT_TYPE_MESSAGE
+
+# С прогресс-баром (детерминированный)
+AlertDialogBuilder.ALERT_TYPE_LOADING
+
+# Со спиннером (индетерминированный)
+AlertDialogBuilder.ALERT_TYPE_SPINNER
+```
+
+### Базовое использование[9]
+
+```python
+from alert import AlertDialogBuilder
+
+context = self.get_last_fragment().getParentActivity()
+
+builder = AlertDialogBuilder(context)
+builder.set_title("Dialog Title")
+builder.set_message("This is a message")
+builder.set_positive_button("OK", lambda bld, btn: bld.dismiss())
+builder.set_negative_button("Cancel", lambda bld, btn: bld.dismiss())
+builder.show()
+```
+
+### Ключевые методы[9]
+
+**Контент:**
+- `set_title(title: str)` — заголовок
+- `set_message(message: str)` — основное сообщение
+- `set_view(view: View, height: int)` — кастомный View
+- `set_items(items: List[str], listener, icons)` — список элементов
+
+**Кнопки:**
+- `set_positive_button(text: str, listener)` — позитивная кнопка
+- `set_negative_button(text: str, listener)` — негативная кнопка
+- `set_neutral_button(text: str, listener)` — нейтральная кнопка
+- `make_button_red(button_type: int)` — сделать кнопку красной
+
+**Слушатели:**
+- `set_on_back_button_listener(listener)` — при нажатии назад
+- `set_on_dismiss_listener(listener)` — при закрытии диалога
+- `set_on_cancel_listener(listener)` — при отмене
+
+**Внешний вид:**
+- `set_top_image(res_id, background_color)` — изображение сверху
+- `set_top_animation(res_id, size, auto_repeat, background_color)` — анимация
+- `set_dim_enabled(enabled: bool)` — затемнение фона
+- `set_blurred_background(blur: bool)` — размытый фон
+- `set_cancelable(cancelable: bool)` — можно ли закрыть
+- `set_canceled_on_touch_outside(cancel: bool)` — закрытие при касании вне диалога
+
+**Жизненный цикл:**
+- `create()` — создать диалог (не показывая)
+- `show()` — создать и показать
+- `dismiss()` — закрыть диалог
+- `get_dialog()` — получить Java `AlertDialog`
+- `get_button(button_type)` — получить View кнопки
+
+**Прогресс:**
+- `set_progress(progress: int)` — установить прогресс (0-100) для `ALERT_TYPE_LOADING`
+
+### Диалог со списком[9]
+
+```python
+def on_item_click(builder, index):
+    builder.dismiss()
+    self.log(f"Selected item {index}")
+
+builder = AlertDialogBuilder(context)
+builder.set_title("Choose Option")
+builder.set_items(
+    items=["Option 1", "Option 2", "Option 3"],
+    listener=on_item_click,
+    icons=None
+)
+builder.show()
+```
+
+## Markdown Parser
+
+### Парсинг markdown[10]
+
+```python
+from markdown_utils import parse_markdown
+
+parsed = parse_markdown("*bold* _italic_ `code`")
+text = parsed.text  # Обычный текст без маркеров
+entities = parsed.entities  # Tuple[RawEntity, ...]
+```
+
+### ParsedMessage[10]
+
+Объект с двумя атрибутами:
+- `text: str` — текст без markdown маркеров
+- `entities: Tuple[RawEntity, ...]` — форматирование
+
+### RawEntity[10]
+
+Каждая сущность содержит:
+- `type: TLEntityType` — тип (bold, italic, code и т.д.)
+- `offset: int` — начальная позиция (UTF-16 code units)
+- `length: int` — длина форматированного сегмента
+- `language: Optional[str]` — для `pre` (code block)
+- `url: Optional[str]` — для `text_link`
+- `document_id: Optional[int]` — для `custom_emoji`
+
+### Конвертация в TLRPC[10]
+
+```python
+tlrpc_entities = [entity.to_tlrpc_object() for entity in parsed.entities]
+
+send_text(
+    dialog_id=chat_id,
+    text=parsed.text,
+    entities=tlrpc_entities
+)
+```
+
+### Поддерживаемые типы форматирования[10]
+
+- `BOLD` — `*bold*`
+- `ITALIC` — `_italic_`
+- `UNDERLINE` — `__underline__`
+- `STRIKETHROUGH` — `~strikethrough~`
+- `SPOILER` — `||spoiler||`
+- `CODE` — inline \`code\`
+- `PRE` — \`\`\`code block\`\`\` (с опциональным языком)
+- `TEXT_LINK` — `[link text](http://example.com)`
+- `CUSTOM_EMOJI` — `[alt text](document_id)`
+
+## Доступные библиотеки
+
+### Python версия[11]
+
+**Python 3.11**
+
+### Предустановленные библиотеки[11]
+
+- `beautifulsoup4` — парсинг HTML и XML
+- `debugpy` — официальный отладчик Python от Microsoft
+- `lxml` — обработка XML и HTML
+- `packaging` — утилиты для пакетов
+- `pillow` — PIL fork для обработки изображений
+- `requests` — HTTP библиотека
+- `PyYAML` — парсер YAML
+
+**Важно:** Если вашему плагину нужна библиотека, которой нет в списке, нужно реализовать функциональность самостоятельно или найти альтернативу в Java[11].
+
+## Общие классы Telegram
+
+### Основные классы и пути[12]
+
+**LaunchActivity** — `TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java`
+- Инициализация приложения, обработка кастомных ссылок
+
+**ProfileActivity** — `TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java`
+- Фрагмент профиля пользователя/канала
+
+**ChatActivity** — `TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java`
+- Рендеринг и функциональность чата
+
+**MessageObject** — `TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java`
+- Обертка для `TLRPC.Message`
+
+**ChatMessageCell** — `TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java`
+- Рендеринг сообщений
+
+**AndroidUtilities** — `TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java`
+- Множество полезных утилит
+
+**MessagesController** — `TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java`
+- Методы для управления состоянием приложения и Telegram запросов
+
+**MessagesStorage** — `TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java`
+- Управление локальной БД. Поле `database` для выполнения SQL запросов
+
+**SendMessagesHelper** — `TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java`
+- Методы для отправки всех типов сообщений, включая файлы
+
+**BulletinFactory** — `TMessagesProj/src/main/java/org/telegram/ui/Components/BulletinFactory.java`
+- Bulletins (уведомления внизу экрана)
+
+**AlertDialog** — `TMessagesProj/src/main/java/org/telegram/ui/ActionBar/AlertDialog.java`
+- Диалоги поверх текущего фрагмента
+
+**TLRPC** — `TMessagesProj/src/main/java/org/telegram/tgnet`
+- Все модели Telegram запросов. Читаемый список: https://corefork.telegram.org/schema
+
+## Практический пример: Weather плагин
+
+### Полный код с оптимизацией производительности[3]
+
+```python
+__id__ = "weather"
+__name__ = "Weather"
+__description__ = "Get weather info with .wt command"
+__author__ = "@yourUsername"
+__version__ = "1.0.0"
+__icon__ = "exteraPlugins/1"
+__min_version__ = "11.12.0"
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+import requests
+from alert import AlertDialogBuilder
+from android_utils import run_on_ui_thread
+from client_utils import run_on_queue, send_text
+
+class WeatherPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self.progress_dialog_builder = None
+    
+    def on_plugin_load(self):
+        self.add_on_send_message_hook()
+    
+    def on_send_message_hook(self, params):
+        text = params.message
+        if not text.startswith(".wt"):
+            return HookResult()
+        
+        # Показываем прогресс диалог
+        context = self.get_last_fragment().getParentActivity()
+        self.progress_dialog_builder = AlertDialogBuilder(
+            context,
+            AlertDialogBuilder.ALERT_TYPE_SPINNER
+        )
+        self.progress_dialog_builder.set_message("Fetching weather...")
+        self.progress_dialog_builder.set_cancelable(False)
+        self.progress_dialog_builder.show()
+        
+        # Запускаем в фоне
+        location = text[3:].strip() or "London"
+        run_on_queue(
+            lambda: self._process_weather_request(params.dialog_id, location)
+        )
+        
+        # Отменяем оригинальную отправку
+        return HookResult(strategy=HookStrategy.CANCEL)
+    
+    def _process_weather_request(self, dialog_id, location):
+        try:
+            weather_data = self._fetch_weather(location)
+            formatted = self._format_weather(weather_data)
+            
+            # Отправляем на UI потоке
+            run_on_ui_thread(
+                lambda: self._send_message_and_dismiss_dialog(dialog_id, formatted)
+            )
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            run_on_ui_thread(
+                lambda: self._send_message_and_dismiss_dialog(dialog_id, error_msg)
+            )
+    
+    def _send_message_and_dismiss_dialog(self, dialog_id, message):
+        if self.progress_dialog_builder:
+            self.progress_dialog_builder.dismiss()
+        send_text(dialog_id=dialog_id, text=message)
+    
+    def _fetch_weather(self, location):
+        url = f"https://wttr.in/{location}?format=j1"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        return response.json()
+    
+    def _format_weather(self, data):
+        current = data['current_condition'][0]
+        return f"🌤 Weather: {current['weatherDesc'][0]['value']}\n" \
+               f"🌡 Temp: {current['temp_C']}°C\n" \
+               f"💨 Wind: {current['windspeedKmph']} km/h"
+```
+
+## Рекомендации и best practices
+
+1. **Потоки:** Всегда выполняйте блокирующие операции (сеть, файлы) в фоновых потоках через `run_on_queue`[3][7]
+2. **UI операции:** Любые изменения UI должны выполняться на UI потоке через `run_on_ui_thread`[6]
+3. **Логирование:** Используйте `self.log()` для отладки. Логи доступны через `adb logcat`[6]
+4. **Метаданные:** Никогда не используйте конкатенацию или f-строки в метаданных — только простые строки[4]
+5. **Контекст меню:** Всегда проверяйте наличие ключей в контексте перед использованием[4]
+6. **Ресурсы:** Bulletins автоматически выполняются на UI потоке, обертка не нужна[8]
+7. **Диалоги:** Вызывайте методы диалогов на UI потоке[9]
+8. **Хуки:** При использовании `MODIFY`, не забудьте вернуть модифицированный объект в `HookResult`[4]
+
+## Источники документации
+
+- Официальная документация: https://plugins.exteragram.app/docs[1][3][2][4][11]
+- Канал с плагинами: @exteraPlugins[3]
+- GitHub: https://github.com/exteraSquad/exteraGram[13][14]
+- FAQ: @exteraFAQ[15][16]
+
+Эта документация охватывает все основные аспекты разработки плагинов для exteraGram, от настройки окружения до продвинутых техник хуков и UI компонентов.
+
+Цитаты:
+[1] Setup https://plugins.exteragram.app/docs/setup
+[2] Introduction - exteraGram Plugins https://plugins.exteragram.app/docs
+[3] First Plugin | exteraGram https://plugins.exteragram.app/docs/first-plugin
+[4] Plugin Class https://plugins.exteragram.app/docs/plugin-class
+[5] Xposed Method Hooking https://plugins.exteragram.app/docs/xposed-hooking
+[6] Android Utilities https://plugins.exteragram.app/docs/android-utils
+[7] Client Utilities - exteraGram Plugins https://plugins.exteragram.app/docs/client-utils
+[8] Bulletin Helper https://plugins.exteragram.app/docs/bulletin-helper
+[9] Alert Dialog Builder https://plugins.exteragram.app/docs/alert-dialog-builder
+[10] Markdown Parser https://plugins.exteragram.app/docs/markdown-utils
+[11] Available Libraries https://plugins.exteragram.app/docs/available-libraries
+[12] Common Telegram Classes https://plugins.exteragram.app/docs/common-source-classes
+[13] exteraSquad/exteraGram: Telegram client based on ... - GitHub https://github.com/exteraSquad/exteraGram
+[14] exteraGram/README.md at main · exteraSquad/exteraGram https://github.com/exteraSquad/exteraGram/blob/main/README.md
+[15] exteraGram Beta https://t.me/s/exteraGramCI
+[16] exteraGram https://t.me/s/exteraGram
+[17] Создание вашего первого плагина для редактора - Документация - Unigine Developer https://developer.unigine.com/ru/docs/latest/editor2/extensions/custom_plugin
+[18] How to Set Up exteraGram: Your Guide to an Experimental Telegram Client fxis.ai https://fxis.ai/edu/how-to-set-up-exteragram-your-guide-to-an-experimental-telegram-client/
+[19] exteragram-utils https://www.piwheels.org/project/exteragram-utils/
+[20] Post #9508 — ATT • Tech News (@agamtechtricks) https://in.tgstat.com/channel/@agamtechtricks/9508
+[21] exteraGram - fork of Telegram for Android https://apkport.com/exteragram-fork-of-telegram-for-android/
+[22] Releases · exteraSquad/exteraGram https://github.com/exteraSquad/exteraGram/releases
+[23] Build your first plugin: 3. Plugin Environment Setup https://www.youtube.com/watch?v=p-z566ILvxc
+[24] exteraGram https://t.me/s/exteraGram?before=185
+[25] Скачать exteraGram 12.1.1 для Android https://trashbox.ru/link/exteragram-android
+[26] [PDF] Developer Manual - Frama-C https://frama-c.com/download/plugin-development-guide-26.1-Iron.pdf
+[27] Grafana Plugins - extend and customize your ... https://grafana.com/grafana/plugins/
+[28] Documentation about modifying exteraGram using Python. https://plugins.exteragram.app
+[29] UMR-CNRM/EPyGrAM: Enhanced Python for Graphics and ... - GitHub https://github.com/UMR-CNRM/EPyGrAM
+[30] Я хочу начать делать плагины для exteragram они д... https://chat01.ai/ru/chat/01JZ15Y5DR873393VN1536CSAS
+[31] exteragram-utils · PyPI https://pypi.org/project/exteragram-utils/
+[32] 12 Python Data Visualization Libraries to Explore for ... https://mode.com/blog/python-data-visualization-libraries/
+[33] ExteraGram: An In-Depth Overview - Premium Telegram Name https://tgnames.com/mods/exteragram-an-in-depth-overview/
+[34] exteraSquad/exteraGram https://github.com/exteraSquad/exteraGram/issues
+[35] Day 7 - Working with External Libraries (Python Lesson 7) https://www.youtube.com/watch?v=NCAmCiYqPUo
+[36] Plugin API Reference Documentation https://www.amplenote.com/help/developing_amplenote_plugins
+[37] exteraGram Beta https://t.me/s/exteraGramCI?before=283
+[38] Which Python library is recommended for creating ... https://discuss.python.org/t/which-python-library-is-recommended-for-creating-customized-charts/39492
+[39] Intro to making plugins in Figma https://www.youtube.com/watch?v=pA4n712h1Vc
+[40] The best unofficial Telegram app for Android https://www.reddit.com/r/androidapps/comments/1hrt449/the_best_unofficial_telegram_app_for_android/
+[41] AyuGram · GitHub https://github.com/AyuGram
+[42] Xposed Module Development Starter Nanny Level Tutorial https://blog.ketal.icu/en/Xposed%E6%A8%A1%E5%9D%97%E5%BC%80%E5%8F%91%E5%85%A5%E9%97%A8%E4%BF%9D%E5%A7%86%E7%BA%A7%E6%95%99%E7%A8%8B/
+[43] Android Xposed Hook Example - Arophix https://arophix.com/2018/10/16/android-xposed-hook-example/
+[44] exteraGram https://t.me/s/exteragram?before=150
+[45] Hook A Private Method In Another App Using Xposed https://stackoverflow.com/questions/37259755/hook-a-private-method-in-another-app-using-xposed
+[46] exteraSquad/exteraGram https://github.com/exteraSquad/exteraGram/labels
+[47] Development tutorial https://github.com/rovo89/XposedBridge/wiki/Development-tutorial/0462f0f9eec958b59c593a30d83d14edd28ee43a
+[48] exteraGram – Telegram https://t.me/s/exteragram?before=179
+[49] aiogram.pdf https://www.scribd.com/document/488001784/aiogram-pdf
+[50] Xposed 框架 hook 简介 原理 案例 https://www.cnblogs.com/baiqiantao/p/10699552.html
+[51] exteraGram – кастомный Telegram клиент https://exteragram.app/ru
+[52] Xposed hook to a system method https://stackoverflow.com/questions/73952374/xposed-hook-to-a-system-method/73960207
+[53] exteraGram Telegram Channel https://telegramian.com/exteragram/
+[54] Class MarkdownParser - West Wind Client Tools https://client-tools.west-wind.com/docs/_4gc1azydx.htm
+[55] remarkjs/remark: markdown processor powered by plugins ... https://github.com/remarkjs/remark
+[56] Memo on how to use the Markdown parser remark https://www.ekwbtblog.com/entry/2023/02/25/192520
+[57] AyuGram for Android https://docs.ayugram.one/android/
+[58] GitHub - syntax-tree/mdast-util-gfm-task-list-item: mdast extension to parse and serialize GFM task list items https://github.com/syntax-tree/mdast-util-gfm-task-list-item
+[59] StackEdit – In-browser Markdown editor https://stackedit.io
+[60] ASTを経由してMarkdownのparse、compileを行う - notebook https://swfz.hatenablog.com/entry/2022/02/26/181414
+[61] Markdown https://docs.aiogram.dev/en/v2.25.1/utils/markdown.html
+[62] exteraSquad https://github.com/exteraSquad
+[63] Online Markdown Editor - Dillinger, the Last Markdown Editor ever. https://dillinger.io
+[64] exteraStore - A revolutionary plugin store for Telegram https://www.exterastore.app
+[65] Android - Alert Dialog https://www.tutorialspoint.com/android/android_alert_dialoges.htm
+[66] How to create AlertDialog in Android | 2024 https://www.youtube.com/watch?v=sNyZCyisxX0
+[67] Creating an Alert Dialog (popup box) | #1 https://www.youtube.com/watch?v=n8oasrJs_eY
+[68] GitHub - dustinkredmond/FXAlert: JavaFX Alerts made easy. Easily create alerts, notifications, input dialogs, and more... https://github.com/dustinkredmond/FXAlert
+[69] Telegram-канал exteraGram Plugins https://sticker-collection.com/channels/exteraPluginsSup?culture=ru
+[70] flutter alert, alertDialog, dialog 구현하기 - 쏘니의 개발블로그 https://juntcom.tistory.com/269
+[71] Telegram channel exteraGram Plugins https://sticker-collection.com/channels/exteraPluginsSup?culture=en
+[72] Dialog Builder Documentation https://www.magnetismsolutions.com/documentation/dialog-builder
+[73] Flutter Alert Dialog, Progress, Auto Close - 달망이 삽질인생 https://dalgonakit.tistory.com/109
+[74] exteraGram https://t.me/exteraGram
+[75] Top Flutter Dialogs packages https://fluttergems.dev/dialogs/
+[76] Telegram Channel "exteraGram Plugins" https://nicegram.app/hub/channel/exteraPluginsSup
